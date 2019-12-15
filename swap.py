@@ -2,14 +2,19 @@ import os
 from typing import List
 
 import javalang
-from javalang.tree import ClassDeclaration, FieldDeclaration, CompilationUnit
+import traceback
+from javalang.tree import ClassDeclaration, FieldDeclaration, CompilationUnit, ConstructorDeclaration
+
+from util.util import field_has_name, is_classfile, is_testfile, write_file, last_field_line, fields_with_anno, \
+    get_field, field_has_anno, last_import_line, first_classbody_line, indentation, first_field_line, field_height, \
+    enter_line_if_not_empty, get_constructor
 
 repo_path = '/Users/sroman/repos/accountmanagement-entities/'
 
 cu = None
 
 
-def re_parse(func):
+def reparse(func):
     def wrapper(*args, **kwargs):
         lines = func(*args, **kwargs)
         lines_asone = ''.join(lines)
@@ -24,21 +29,36 @@ def e_handle(func):
     def wrapper(*args, **kwargs):
         try:
             val = func(*args, **kwargs)
+            return val
         except Exception as e:
             raise e
-        return val
 
     return wrapper
 
 
-def field_has_anno(f: FieldDeclaration, anno_name: str) -> bool:
-    return len(list(filter(lambda a: a.name == anno_name, f.annotations))) > 0
+@reparse
+def field_spacing(fd: FieldDeclaration, lines: List[str]) -> List[str]:
+    """
+    add spacing if required above and below a field
+    taking into account its annotations
+    :param fd:
+    :param lines:
+    :return:
+    """
+    height = field_height(fd)
+    bottom = fd.position.line - 1
+    top = bottom - height + 1
+
+    enter_line_if_not_empty(top - 1, lines)
+    enter_line_if_not_empty(bottom + 1, lines)
+
+    return lines
 
 
-@re_parse
+@reparse
 @e_handle
 def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, lines: List[str],
-              anno_name: str = None) -> str:
+              anno_name: str = None) -> List[str]:
     if not [f for f in clazz.fields
             if field_has_name(f, name)
                and f.type.name == fieldtype
@@ -62,71 +82,26 @@ def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, 
         field_lines.append(f'{spaces * " " if spaces else ""}{acc_mod} {fieldtype} {name};\n')
         lines[l + top_or_bottom_pad:1 + has_anno] = field_lines
         # fixme add bottom/top spacing
-        return lines
-
-
-@re_parse
-@e_handle
-def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str]) -> List[str]:
-    field_index = field.position.line - 1  # off by one
-    lines[field_index:1] = f'@{anno}'
     return lines
 
 
-def first_field_line(clazz: ClassDeclaration) -> int:
-    num_annos = len(clazz.fields[0].annotations)
-    return clazz.fields[0].position.line - num_annos - 1  # off by one
+@reparse
+@e_handle
+def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str]) -> List[str]:
+    field_index = field.position.line - 1  # off by one
+    lines[field_index:1] = [f'@{anno}']
+    # todo fix spacing and tabbing
+    return lines
 
 
-def last_field_line(clazz: ClassDeclaration) -> int:
-    num_annos = len(clazz.fields[0].annotations)
-    return clazz.fields[-1].position.line + num_annos - 1  # off by one
-
-
-@re_parse
+@reparse
 @e_handle
 def remove_fields(fields: List[FieldDeclaration], lines: List[str]) -> List[str]:
     for f in fields:
         del lines[f.position.line - 1]  # off by one
         for a in f.annotations:
             del lines[a.position.line - 1]  # off by one
-        return lines
-    return []
-
-
-def field_has_name(fd: FieldDeclaration, name: str) -> bool:
-    return len(list(filter(lambda d: d.name == name, fd.declarators))) > 0
-
-
-def indentation(line: int, lines: List[str]) -> int:
-    """
-    get number of columns from left for line
-    :param lines:
-    :param line:
-    :return:
-    """
-    line = lines[line]
-    if line.startswith(' '):
-        line.rstrip()
-        return line.rfind(' ') + 1
-
-
-def first_classbody_line(clazz: ClassDeclaration) -> int:
-    """
-    first line of the class body
-    :param clazz:
-    :return:
-    """
-    return clazz.position.line - 1  # off by one
-
-
-def autowired_fields(clazz: ClassDeclaration) -> [FieldDeclaration]:
-    """
-    all fields with the @Autowired annotation
-    :param clazz:
-    :return:
-    """
-    return fields_with_anno(clazz, 'Autowired')
+    return lines
 
 
 def constr_params_from_fielddeclrs(fields: List[FieldDeclaration]) -> List[str]:
@@ -135,18 +110,17 @@ def constr_params_from_fielddeclrs(fields: List[FieldDeclaration]) -> List[str]:
             for f in fields]
 
 
-@re_parse
+@reparse
 @e_handle
 def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]) -> List[str]:
     """
     add a constructor to this class
+    :param params:
     :param lines:
-    :param const:
     :param clazz:
     :return:
     """
     const_line = first_classbody_line(clazz) + 1  # line after open brace
-    params_str = ', '.join(params)
     assignments = []
     for i, p in enumerate(params):
         begin = '    '
@@ -154,84 +128,38 @@ def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]
         varname = p.split(" ")[-1]
         assignments.append(f'{begin}this.{varname} = {varname}{end}')
 
-    # todo indent based on above line indentation
     constructor_lines = methodlines('public', '', clazz.name, params, assignments)
-    # todo add bottom/top spacing
+    # todo fix spacing and tabbing
     lines[const_line:len(constructor_lines)] = constructor_lines
 
     return lines
 
 
-def methodlines(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str]):
-    return [f'{acc_mod} {rettype + " " if rettype else ""}{name}({", ".join(args)}) {{\n'] + \
-           body + \
+def methodlines(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], anno: str = None) -> List[str]:
+    return [f'{"@" + anno if anno else ""}\n',
+            f'{acc_mod} {rettype + " " if rettype else ""}{name}({", ".join(args)}) {{\n'] + \
+               body + \
            ['}\n']
 
 
-def last_import_line(cu: CompilationUnit) -> int:
-    """
-    get the line number of the last import in the file
-    :param cu:
-    :return:
-    """
-    return cu.imports[-1].position.line - 1  # off by one
-
-
-def clazz(cu: CompilationUnit) -> ClassDeclaration:
-    return cu.types[0]
-
-
-@re_parse
+@reparse
 @e_handle
 def add_import(path: str, cu: CompilationUnit, lines: [str]) -> List[str]:
     """
-    add an import to this class
+    add an import to this class if not already present
     :param lines:
     :param path:
     :param cu:
     :return:
     """
-    l = last_import_line(cu)
-    lines[l + 1:1] = [path + '\n']
+    imports = set([i.path for i in cu.imports])
+    if path not in imports:
+        l = last_import_line(cu)
+        lines[l + 1:1] = [f'import {path};\n']
     return lines
 
 
-@re_parse
-def enter_line_if_not_empty(lines: List[str], line: int) -> List[str]:
-    if lines[line] != '\n':
-        lines[line:1] = '\n'
-    return lines
-
-
-def mock_in_tests():
-    pass
-
-
-# @re_parse
-# @e_handle
-# def remove_news(test_class: ClassDeclaration) -> List[str]:
-#     """
-#     remove new whatever() calls from test_class
-#     :param test_class:
-#     :return:
-#     """
-#     # use @InjectMocks to find
-#     fields = fields_with_anno(test_class, 'InjectMocks')
-#     # fixme
-#     pass
-#
-
-def fields_with_anno(clazz: ClassDeclaration, anno_name: str) -> [FieldDeclaration]:
-    """
-    FieldDeclarations of type anno_name in this class
-    :param clazz:
-    :param anno_name:
-    :return:
-    """
-    return list(filter(lambda fd: field_has_anno(fd, anno_name), clazz.fields))
-
-
-@re_parse
+@reparse
 @e_handle
 def remove_import(cu: CompilationUnit, path: str, lines: List[str]) -> List[str]:
     del lines[list(filter(lambda i: i.path == path, cu.imports))[0].position.line]
@@ -239,28 +167,33 @@ def remove_import(cu: CompilationUnit, path: str, lines: List[str]) -> List[str]
     return lines
 
 
-@re_parse
+@reparse
 @e_handle
 def add_method(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], pos: int, lines: List[str],
                anno: str = None) -> List[str]:
-    mlines = methodlines(acc_mod, rettype, name, args, body)
-    # todo annotation
+    mlines = methodlines(acc_mod, rettype, name, args, body, anno)
     lines[pos:len(mlines)] = mlines
+    # todo fix spacing and tabbing
+    return lines
 
 
+@e_handle
 def find_testee(testclazz: ClassDeclaration) -> FieldDeclaration:
+    # has @Spy or named 'testee' or type is in class name
+    # fixme: prioritize 'testee' name as selection criteria
+
     fields = testclazz.fields
-    try:
-        # has @Spy or named 'testee' or type is in class name
-        return list(filter(
-            lambda f: field_has_anno(f, 'Spy') or field_has_name(f,
-                                                                 'testee') or f.name.upper() in testclazz.name.upper(),
-            testclazz.fields))[0]
-    except Exception as e:
-        print(f'Testee for test class {testclazz.name} not found')
+    testees = []
+    if fields:
+        testees = list(filter(lambda f: field_has_name(f, 'testee') or
+                                        f.declarators[0].name.upper() in testclazz.name.upper() or
+                                        field_has_anno(f, 'Spy'), fields))
+    if not testees:
+        raise Exception(f'Testee for test class {testclazz.name} not found')
+    return testees[0]
 
 
-@re_parse
+@reparse
 @e_handle
 def remove_all_anno(name: str, lines: List[str]) -> List[str]:
     for i, l in enumerate(lines):
@@ -269,15 +202,19 @@ def remove_all_anno(name: str, lines: List[str]) -> List[str]:
     return lines
 
 
-def refactor_classfile(lines: List[str], cu: ClassDeclaration):
-    clazz = cu.types[0]
-    print(f'processing class {clazz.name}')
+def refactor_classfile(lines: List[str]):
+    global cu
+    print(f'processing class {cu.types[0].name}')
+
+    get_constructor(cu.types[0], [])
 
     # add Logger field
-    add_field(clazz, 'Logger', 'log', 'private', lines)
+    # todo return added field
+    add_field(cu.types[0], 'Logger', 'log', 'private', lines)
+    field_spacing(get_field(cu.types[0], 'log'), lines)
 
     # find @Autowired fields
-    aw_fields = autowired_fields(clazz)
+    aw_fields = fields_with_anno(cu.types[0], 'Autowired')
 
     # remove all @Autowired
     remove_all_anno('Autowired', lines)
@@ -287,61 +224,44 @@ def refactor_classfile(lines: List[str], cu: ClassDeclaration):
 
     # add constructor with those fields plus the logger field
     field_strs = constr_params_from_fielddeclrs(aw_fields)
-    add_constructor(['Logger log'] + field_strs, clazz, lines)
+    add_constructor(['Logger log'] + field_strs, cu.types[0], lines)
 
     # add noarg constructors
-    add_constructor([], clazz, lines)
+    add_constructor([], cu.types[0], lines)
 
     # add imports:
-    return add_import('import org.slf4j.Logger;', cu, lines)
+    return add_import('org.slf4j.Logger', cu, lines)
 
 
-def refactor_testfile(lines: List[str], cu: CompilationUnit) -> List[str]:
-    clazz = cu.types[0]
-    testee = find_testee(clazz)
+def refactor_testfile(lines: List[str]) -> List[str]:
+    global cu
+    print(f'Refactoring {cu.types[0].name}')
 
     # add Logger with @Mock
-    add_field(clazz, 'Logger', 'log', 'private', lines, 'Mock')
+    add_field(cu.types[0], 'Logger', 'log', 'private', lines, 'Mock')
+    field_spacing(get_field(cu.types[0], 'log'), lines)
 
     # check if @InjectMocks required
-    if not fields_with_anno(clazz, 'InjectMocks'):
+    if not fields_with_anno(cu.types[0], 'InjectMocks'):
         # add @InjectMocks to testee
-        add_field_annotation(testee, 'InjectMocks', lines)
+        add_field_annotation(find_testee(cu.types[0]), 'InjectMocks', lines)
+        field_spacing(find_testee(cu.types[0]), lines)
 
         # also add @Before init mocks
-        lfield = last_field_line(clazz)
-        add_method('public', 'void', 'init', [], ['MockitoAnnotations.initMocks(this);\n'], lfield + 1, lines)
+        lfield = last_field_line(cu.types[0])
+        add_method('public', 'void', 'init', [], ['MockitoAnnotations.initMocks(this);\n'], lfield + 1, lines, 'Before')
 
-        # add InjectMocks import
-        add_import('import org.mockito.InjectMocks;', cu, lines)
-        # add Mockito import org.mockito.MockitoAnnotations;
-        add_import('import org.mockito.MockitoAnnotations;', cu, lines)
+        add_import('org.mockito.InjectMocks', cu, lines)
+        add_import('org.mockito.MockitoAnnotations', cu, lines)
+        add_import('org.junit.Before', cu, lines)
 
     # add mock import
-    add_import('import org.slf4j.Logger;', cu, lines)
-    return add_import('import org.mockito.Mock;', cu, lines)
-
-
-def is_classfile(cu: CompilationUnit) -> bool:
-    clazz = cu.types[0]
-    if not clazz: return False
-    return not clazz.name.endswith('Test')
-
-
-def is_testfile(cu: CompilationUnit) -> bool:
-    clazz = cu.types[0]
-    if not clazz: return False
-    return clazz.name.endswith('Test')
-
-
-def update_file(newlines, file_obj):
-    file_obj.seek(0)
-    for nl in newlines:
-        file_obj.write(nl)
-    file_obj.truncate()
+    add_import('org.slf4j.Logger', cu, lines)
+    return add_import('org.mockito.Mock', cu, lines)
 
 
 def process_file(path: str):
+    global cu
     with open(path, 'r+') as jf:
 
         lines = jf.readlines()
@@ -349,14 +269,14 @@ def process_file(path: str):
         cu = javalang.parse.parse(as_str)
 
         if is_classfile(cu) and list(filter(lambda a: a.name == 'Slf4j', cu.types[0].annotations)):
-            newlines = refactor_classfile(lines, cu)
-            update_file(newlines, jf)
+            newlines = refactor_classfile(lines)
+            write_file(newlines, jf)
         elif is_testfile(cu):
             try:
-                newlines = refactor_testfile(lines, cu)
-                update_file(newlines, jf)
+                newlines = refactor_testfile(lines)
+                write_file(newlines, jf)
             except Exception as e:
-                print('something went wrong', e)
+                print(traceback.format_exc())
 
 
 def main():
