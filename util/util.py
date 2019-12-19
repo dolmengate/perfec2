@@ -84,7 +84,6 @@ def field_height(fd: FieldDeclaration) -> int:
 
 
 def get_field(clazz: ClassDeclaration, name: str) -> FieldDeclaration:
-    # fixme
     try:
         return list(filter(lambda f: field_has_name(f, name), clazz.fields))[0]
     except Exception as e:
@@ -113,7 +112,7 @@ def is_classfile(cu: CompilationUnit) -> bool:
 def is_testfile(cu: CompilationUnit) -> bool:
     clazz = cu.types[0]
     if not clazz: return False
-    return clazz.name.endswith('Test')
+    return 'Test' in clazz.name
 
 
 def write_file(newlines, file_obj):

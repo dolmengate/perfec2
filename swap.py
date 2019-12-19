@@ -3,13 +3,12 @@ from typing import List
 
 import javalang
 import traceback
-from javalang.tree import ClassDeclaration, FieldDeclaration, CompilationUnit, ConstructorDeclaration
+from javalang.tree import ClassDeclaration, FieldDeclaration, CompilationUnit
 
+from util import auto
 from util.util import field_has_name, is_classfile, is_testfile, write_file, last_field_line, fields_with_anno, \
     get_field, field_has_anno, last_import_line, first_classbody_line, indentation, first_field_line, field_height, \
     enter_line_if_not_empty, get_constructor
-
-repo_path = '/Users/sroman/repos/accountmanagement-entities/'
 
 cu = None
 
@@ -138,7 +137,7 @@ def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]
 def methodlines(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], anno: str = None) -> List[str]:
     return [f'{"@" + anno if anno else ""}\n',
             f'{acc_mod} {rettype + " " if rettype else ""}{name}({", ".join(args)}) {{\n'] + \
-               body + \
+           body + \
            ['}\n']
 
 
@@ -180,8 +179,6 @@ def add_method(acc_mod: str, rettype: str, name: str, args: List[str], body: Lis
 @e_handle
 def find_testee(testclazz: ClassDeclaration) -> FieldDeclaration:
     # has @Spy or named 'testee' or type is in class name
-    # fixme: prioritize 'testee' name as selection criteria
-
     fields = testclazz.fields
     testees = []
     if fields:
@@ -206,30 +203,16 @@ def refactor_classfile(lines: List[str]):
     global cu
     print(f'processing class {cu.types[0].name}')
 
-    get_constructor(cu.types[0], [])
-
     # add Logger field
     # todo return added field
-    add_field(cu.types[0], 'Logger', 'log', 'private', lines)
+    add_field(cu.types[0], 'Logger', 'log', 'private', lines, 'Autowired')
     field_spacing(get_field(cu.types[0], 'log'), lines)
-
-    # find @Autowired fields
-    aw_fields = fields_with_anno(cu.types[0], 'Autowired')
-
-    # remove all @Autowired
-    remove_all_anno('Autowired', lines)
 
     # remove all @Slf4j
     remove_all_anno('Slf4j', lines)
 
-    # add constructor with those fields plus the logger field
-    field_strs = constr_params_from_fielddeclrs(aw_fields)
-    add_constructor(['Logger log'] + field_strs, cu.types[0], lines)
-
-    # add noarg constructors
-    add_constructor([], cu.types[0], lines)
-
     # add imports:
+    add_import('org.springframework.beans.factory.annotation.Autowired', cu, lines)
     return add_import('org.slf4j.Logger', cu, lines)
 
 
@@ -254,6 +237,7 @@ def refactor_testfile(lines: List[str]) -> List[str]:
         add_import('org.mockito.InjectMocks', cu, lines)
         add_import('org.mockito.MockitoAnnotations', cu, lines)
         add_import('org.junit.Before', cu, lines)
+        add_import('org.springframework.beans.factory.annotation.Autowired', cu, lines)
 
     # add mock import
     add_import('org.slf4j.Logger', cu, lines)
@@ -267,26 +251,65 @@ def process_file(path: str):
         lines = jf.readlines()
         as_str = ''.join(lines)
         cu = javalang.parse.parse(as_str)
-
-        if is_classfile(cu) and list(filter(lambda a: a.name == 'Slf4j', cu.types[0].annotations)):
-            newlines = refactor_classfile(lines)
-            write_file(newlines, jf)
-        elif is_testfile(cu):
-            try:
-                newlines = refactor_testfile(lines)
+        if cu.types:
+            if is_classfile(cu) and list(filter(lambda a: a.name == 'Slf4j', cu.types[0].annotations)):
+                newlines = refactor_classfile(lines)
                 write_file(newlines, jf)
-            except Exception as e:
-                print(traceback.format_exc())
+            elif is_testfile(cu):
+                try:
+                    newlines = refactor_testfile(lines)
+                    write_file(newlines, jf)
+                except Exception as e:
+                    print(traceback.format_exc())
+        else:
+            print(f'file {path} has no defined Types')
+
+
+
+repos_root = '/Users/sroman/repos/'
+
+repos = [
+    # 'aa-cfr-api',                     in rft
+    # 'aa-com-api',                     in rft
+    # 'aa-con-api',                     in rft
+    # 'aa-iss-api',                     deploying
+    # 'aa-per-api',                     in rft
+    # 'aa-prl-api',                     in rft
+    # 'address-api',                    in rft
+    # 'ams-search-api',                 in rft
+    # 'apppolicy-api',                  in rft
+    # 'contact-api',                    in rft
+    # 'identifier-api',                 in rft
+    # 'issue-api',                      in rft
+    # 'organization-api',               in rft
+    # 'organizationgroup-api',          in rft
+    # 'person-api',                     in rft
+    # 'role-api',                       in rft
+    # 'tag-api'                         in rft
+    # 'issuesby100m-api',
+    # 'issuesby5m-api',
+    # 'authorization-api',
+    'authentication-api'
+]
 
 
 def main():
     cwd = os.path.dirname(os.path.abspath(__file__))
     global cu
 
-    for root, dirs, files in os.walk(repo_path + 'src/'):
-        for f in files:
-            if f.endswith('.java'):
-                process_file(os.path.join(root, f))
+    for repo in repos:
+        repo_path = repos_root + repo
+        for root, dirs, files in os.walk(repo_path + '/src/'):
+            for f in files:
+                if f.endswith('.java'):
+                    process_file(os.path.join(root, f))
+
+        auto.set_entities_version('1.0.0-SNAPSHOT', repo_path)
+        auto.mvn_clean_compile(repo_path)
+        # auto.mvn_clean_test(repo_path)
+        # auto.set_entities_version('1.0.0-SNAPSHOT', repo_path)
+        # auto.git_add_src_files(repo_path)
+        # auto.git_add_test_files(repo_path)
 
 
 if __name__ == '__main__':
