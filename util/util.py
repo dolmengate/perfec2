@@ -2,9 +2,51 @@
 # lines and spacing
 #
 import traceback
+import javalang
 from typing import List
 
 from javalang.tree import ClassDeclaration, FieldDeclaration, ConstructorDeclaration, CompilationUnit
+
+
+def reparse(func):
+    def wrapper(*args, **kwargs):
+        lines = func(*args, **kwargs)
+        lines_asone = ''.join(lines)
+        global cu
+        cu = javalang.parse.parse(lines_asone)
+        return lines
+
+    return wrapper
+
+
+def e_handle(func):
+    def wrapper(*args, **kwargs):
+        try:
+            val = func(*args, **kwargs)
+            return val
+        except Exception as e:
+            raise e
+
+    return wrapper
+
+
+@reparse
+def field_spacing(fd: FieldDeclaration, lines: List[str]) -> List[str]:
+    """
+    add spacing if required above and below a field
+    taking into account its annotations
+    :param fd:
+    :param lines:
+    :return:
+    """
+    height = field_height(fd)
+    bottom = fd.position.line - 1
+    top = bottom - height + 1
+
+    enter_line_if_not_empty(top - 1, lines)
+    enter_line_if_not_empty(bottom + 1, lines)
+
+    return lines
 
 
 def last_import_line(cu: CompilationUnit) -> int:
@@ -98,6 +140,15 @@ def get_constructor(clazz: ClassDeclaration, args: List[str]) -> ConstructorDecl
 
 def constructor_height(fd: ConstructorDeclaration) -> int:
     pass
+
+# # # # # # # # # # # #
+# method utils
+#
+
+
+def find_method_by_name(clazz: ClassDeclaration, name: str) -> int:
+    methods = clazz.methods
+    return methods[0].position.line - 1
 
 
 # # # # # # # # # # # #

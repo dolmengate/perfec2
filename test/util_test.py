@@ -6,13 +6,13 @@ from unittest.mock import Mock, PropertyMock
 from javalang.tokenizer import Position
 from javalang.tree import CompilationUnit, FieldDeclaration
 
-import swap
+import perfec2
 
 
 class TestAddFieldAnnotation(unittest.TestCase):
 
     def setUp(self) -> None:
-        self.testee = undecorated(swap.add_field_annotation)
+        self.testee = undecorated(perfec2.add_field_annotation)
 
     def test_happy(self):
         position = PropertyMock()
@@ -35,7 +35,7 @@ class TestAddFieldAnnotation(unittest.TestCase):
 class TestFindTestee(unittest.TestCase):
 
     def setUp(self) -> None:
-        self.testee = undecorated(swap.find_testee)
+        self.testee = undecorated(perfec2.find_testee)
 
     @mock.patch('swap.util.util')
     def test_happy(self, util):
