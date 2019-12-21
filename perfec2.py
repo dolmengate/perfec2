@@ -2,6 +2,7 @@ import traceback
 from typing import List, Callable
 
 import javalang
+from javalang.parser import JavaSyntaxError
 from javalang.tree import ClassDeclaration, FieldDeclaration, MethodDeclaration
 
 from util import util
@@ -9,18 +10,45 @@ from util import util
 cu = None
 
 
-def reparse(func):
+
+# todo generify this method to work with any property of a class with any condition
+def methods_with_anno(clazz, anno: str):
+    completed = []  # names of methods already yielded
+    name = clazz.name
+    next = 0
+    total = len(this_clazz().methods)  # initial length
+    if this_clazz().name == name:  # limit looping through methods of the desired class only
+        while True:
+            curr_total = len(this_clazz().methods)
+            if total != curr_total:     # file was modified since last iteration, restart
+                total = curr_total
+                completed.clear()
+                next = 0
+                continue
+            next_m = this_clazz().methods[next]
+            if util.method_has_annotation(next_m, anno) and next_m.name not in completed:
+                completed.append(next_m.name)
+                yield next_m
+            next += 1
+            if next == curr_total:
+                break
+
+
+def _reparse(func):
     def wrapper(*args, **kwargs):
         lines = func(*args, **kwargs)
         lines_asone = ''.join(lines)
         global cu
-        cu = javalang.parse.parse(lines_asone)
+        try:
+            cu = javalang.parse.parse(lines_asone)
+        except JavaSyntaxError as e:
+            traceback.format_exc()
         return lines
 
     return wrapper
 
 
-@reparse
+@_reparse
 def field_spacing(fd: FieldDeclaration, lines: List[str]) -> List[str]:
     """
     add spacing if required above and below a field
@@ -33,8 +61,8 @@ def field_spacing(fd: FieldDeclaration, lines: List[str]) -> List[str]:
     bottom = fd.position.line - 1
     top = bottom - height + 1
 
-    util.enter_line_if_not_empty(top - 1, lines)
-    util.enter_line_if_not_empty(bottom + 1, lines)
+    util._enter_line_if_not_empty(top - 1, lines)
+    util._enter_line_if_not_empty(bottom + 1, lines)
 
     return lines
 
@@ -54,7 +82,7 @@ def process_file(path: str, classfile_op: Callable, testfile_op: Callable = lamb
         as_str = ''.join(lines)
         cu = javalang.parse.parse(as_str)
         if cu.types:
-            if util.is_classfile(cu) and list(filter(lambda a: a.name == 'Slf4j', cu.types[0].annotations)):
+            if util.is_classfile(cu):
                 newlines = classfile_op(lines)
                 util.write_file(newlines, jf)
             elif util.is_testfile(cu):
@@ -67,7 +95,7 @@ def process_file(path: str, classfile_op: Callable, testfile_op: Callable = lamb
             print(f'file {path} has no defined Types')
 
 
-@reparse
+@_reparse
 def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, lines: List[str],
               anno_name: str = None) -> List[str]:
     """
@@ -95,7 +123,7 @@ def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, 
             top_or_bottom_pad = 1
 
         has_anno = 0
-        spaces = util.indentation(l, lines)
+        spaces = util._indentation(l, lines)
         field_lines = []
         if anno_name:
             field_lines.append(f'{spaces * " " if spaces else ""}@{anno_name}\n')
@@ -106,7 +134,15 @@ def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, 
     return lines
 
 
-@reparse
+@_reparse
+def remove_all_anno(name: str, lines: List[str]) -> List[str]:
+    for i, l in enumerate(lines):
+        if l.find('@' + name) != -1 and l.rfind(';') == -1:
+            del lines[i]
+    return lines
+
+
+@_reparse
 def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str]) -> List[str]:
     field_index = field.position.line - 1  # off by one
     lines[field_index:1] = [f'@{anno}']
@@ -114,20 +150,17 @@ def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str]) -
     return lines
 
 
-@reparse
-def add_method_annotation_with_props(field: MethodDeclaration, props: dict, anno: str, lines: List[str]) -> List[str]:
-    """
-    add an annotation to a method when the annotation has its own properties
-    :param field:
-    :param props:
-    :param anno:
-    :param lines:
-    :return:
-    """
+@_reparse
+def add_method_annotation_with_props(
+        # clazz: ClassDeclaration, # fixme maybe not needed since new type is passed in
+        method: MethodDeclaration, props: dict, anno: str, lines: List[str]) -> List[str]:
+    m_line = method.position.line - 1  # off by one
+    anno_lines = util.annotation_with_props_lines(anno, props)
+    lines[m_line: len(anno_lines)] = anno_lines  # insert just above the method signature, below other annotations
     return lines
 
 
-@reparse
+@_reparse
 def remove_fields(fields: List[FieldDeclaration], lines: List[str]) -> List[str]:
     for f in fields:
         del lines[f.position.line - 1]  # off by one
@@ -137,12 +170,12 @@ def remove_fields(fields: List[FieldDeclaration], lines: List[str]) -> List[str]
 
 
 def constr_params_from_fielddeclrs(fields: List[FieldDeclaration]) -> List[str]:
-    return [f'{f.type.name} ' \
+    return [f'{f.type.name} '
             f'{list(f.declarators)[0].name if len(f.declarators) else ""}'
             for f in fields]
 
 
-@reparse
+@_reparse
 def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]) -> List[str]:
     """
     add a constructor to this class
@@ -159,21 +192,23 @@ def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]
         varname = p.split(" ")[-1]
         assignments.append(f'{begin}this.{varname} = {varname}{end}')
 
-    constructor_lines = methodlines('public', '', clazz.name, params, assignments)
+    constructor_lines = util.method_lines('public', '', clazz.name, params, assignments)
     # todo fix spacing and tabbing
     lines[const_line:len(constructor_lines)] = constructor_lines
 
     return lines
 
 
-def methodlines(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], anno: str = None) -> List[str]:
-    return [f'{"@" + anno if anno else ""}\n',
-            f'{acc_mod} {rettype + " " if rettype else ""}{name}({", ".join(args)}) {{\n'] + \
-           body + \
-           ['}\n']
+@_reparse
+def add_method(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], pos: int, lines: List[str],
+               anno: str = None) -> List[str]:
+    mlines = util.method_lines(acc_mod, rettype, name, args, body, anno)
+    lines[pos:len(mlines)] = mlines
+    # todo fix spacing and tabbing
+    return lines
 
 
-@reparse
+@_reparse
 def add_import(path: str, lines: [str]) -> List[str]:
     """
     add an import to this class if not already present
@@ -190,7 +225,7 @@ def add_import(path: str, lines: [str]) -> List[str]:
     return lines
 
 
-@reparse
+@_reparse
 def remove_import(path: str, lines: List[str]) -> List[str]:
     global cu
     del lines[list(filter(lambda i: i.path == path, cu.imports))[0].position.line]
@@ -198,16 +233,8 @@ def remove_import(path: str, lines: List[str]) -> List[str]:
     return lines
 
 
-@reparse
-def add_method(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], pos: int, lines: List[str],
-               anno: str = None) -> List[str]:
-    mlines = methodlines(acc_mod, rettype, name, args, body, anno)
-    lines[pos:len(mlines)] = mlines
-    # todo fix spacing and tabbing
-    return lines
-
-
 def find_testee(testclazz: ClassDeclaration) -> FieldDeclaration:
+    # fixme move out of this library
     # has @Spy or named 'testee' or type is in class name
     fields = testclazz.fields
     testees = []
@@ -220,14 +247,6 @@ def find_testee(testclazz: ClassDeclaration) -> FieldDeclaration:
     return testees[0]
 
 
-@reparse
-def remove_all_anno(name: str, lines: List[str]) -> List[str]:
-    for i, l in enumerate(lines):
-        if l.find('@' + name) != -1 and l.rfind(';') == -1:
-            del lines[i]
-    return lines
-
-
 def this_clazz():
     global cu
-    return util.clazz(cu)
+    return util._clazz(cu)

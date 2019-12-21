@@ -4,7 +4,7 @@
 import traceback
 from typing import List
 
-from javalang.tree import ClassDeclaration, FieldDeclaration, ConstructorDeclaration, CompilationUnit
+from javalang.tree import ClassDeclaration, FieldDeclaration, ConstructorDeclaration, CompilationUnit, MethodDeclaration
 
 
 def last_import_line(cu: CompilationUnit) -> int:
@@ -16,17 +16,17 @@ def last_import_line(cu: CompilationUnit) -> int:
     return cu.imports[-1].position.line - 1  # off by one
 
 
-def clazz(cu: CompilationUnit) -> ClassDeclaration:
+def _clazz(cu: CompilationUnit) -> ClassDeclaration:
     return cu.types[0]
 
 
-def enter_line_if_not_empty(line: int, lines: List[str]) -> List[str]:
+def _enter_line_if_not_empty(line: int, lines: List[str]) -> List[str]:
     if lines[line] != '\n':
         lines[line:1] = '\n'
     return lines
 
 
-def indentation(line: int, lines: List[str]) -> int:
+def _indentation(line: int, lines: List[str]) -> int:
     """
     get number of columns from left for line
     :param lines:
@@ -37,6 +37,11 @@ def indentation(line: int, lines: List[str]) -> int:
     if line.startswith(' '):
         line.rstrip()
         return line.rfind(' ') + 1
+
+
+# def match_indentation_and_insert(insertee: [str], lines: [str]) -> [str]:
+#     todo implement
+    # return lines
 
 
 def first_classbody_line(clazz: ClassDeclaration) -> int:
@@ -83,7 +88,7 @@ def field_height(fd: FieldDeclaration) -> int:
     return len(fd.annotations) + 1
 
 
-def get_field(clazz: ClassDeclaration, name: str) -> FieldDeclaration:
+def field_with_name(clazz: ClassDeclaration, name: str) -> FieldDeclaration:
     try:
         return list(filter(lambda f: field_has_name(f, name), clazz.fields))[0]
     except Exception as e:
@@ -91,22 +96,49 @@ def get_field(clazz: ClassDeclaration, name: str) -> FieldDeclaration:
         print(f'class {clazz.name} has no field {name}')
 
 
-def get_constructor(clazz: ClassDeclaration, args: List[str]) -> ConstructorDeclaration:
+# def get_constructor(clazz: ClassDeclaration, args: List[str]) -> ConstructorDeclaration:
     # fixme compare constructor args with set
-    return list(filter(lambda c: c, clazz.constructors))
+    # return list(filter(lambda c: c, clazz.constructors))
 
 
-def constructor_height(fd: ConstructorDeclaration) -> int:
-    pass
+# def constructor_height(fd: ConstructorDeclaration) -> int:
+#     todo implement
+    # pass
+
 
 # # # # # # # # # # # #
 # method utils
 #
+# def methods_with_anno(clazz: ClassDeclaration, anno: str) -> [MethodDeclaration]:
+#     return [m for m in clazz.methods for a in m.annotations if a.name == anno]
 
 
-def find_method_by_name(clazz: ClassDeclaration, name: str) -> int:
-    methods = clazz.methods
-    return methods[0].position.line - 1
+# def method_height(method: MethodDeclaration) -> int:
+#     return method.position.line + 0 + len(method.annotations) # todo implement
+
+
+def method_has_annotation(method: MethodDeclaration, anno: str) -> bool:
+    annos = filter(lambda a: a.name == anno, method.annotations)
+    return any(annos)
+
+
+def method_lines(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], anno: str = None) -> List[
+    str]:
+    return [f'{"@" + anno if anno else ""}\n',
+            f'{acc_mod} {rettype + " " if rettype else ""}{name}({", ".join(args)}) {{\n'] + \
+           body + \
+           ['}\n']
+
+
+# # # # # # # # # # # #
+# annotation utils
+#
+def annotation_with_props_lines(name: str, props: dict) -> [str]:
+    annoprops_lines = [f'{k}={v},\n' for k, v in props.items()]
+    annoprops_lines[-1] = annoprops_lines[-1].replace(',\n', '\n')
+    return [f'@{name}(\n'] + \
+           annoprops_lines + \
+           [')\n']
 
 
 # # # # # # # # # # # #
