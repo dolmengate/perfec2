@@ -10,7 +10,6 @@ from util import util
 cu = None
 
 
-
 # todo generify this method to work with any property of a class with any condition
 def methods_with_anno(clazz, anno: str):
     completed = []  # names of methods already yielded
@@ -58,11 +57,11 @@ def field_spacing(fd: FieldDeclaration, lines: List[str]) -> List[str]:
     :return:
     """
     height = util.field_height(fd)
-    bottom = fd.position.line - 1
-    top = bottom - height + 1
+    index = fd.position.line - 1
 
-    util._enter_line_if_not_empty(top - 1, lines)
-    util._enter_line_if_not_empty(bottom + 1, lines)
+    # have to return lines for 'mock' to know anything was changed
+    lines = util._add_newline_if_not_empty(index, lines, pos='bottom')
+    lines = util._add_newline_if_not_empty(index - height, lines)
 
     return lines
 
@@ -96,8 +95,7 @@ def process_file(path: str, classfile_op: Callable, testfile_op: Callable = lamb
 
 
 @_reparse
-def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, lines: List[str],
-              anno_name: str = None) -> List[str]:
+def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, lines: List[str], anno_name) -> List[str]:
     """
     Add a field to a class
     :param clazz:
@@ -116,21 +114,14 @@ def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, 
 
         # where will the field be inserted?:
         if clazz.fields:
-            l = util.first_field_line(clazz)
-            top_or_bottom_pad = 0
+            l_i = util.first_field_line(clazz)
+            pos_mod = 'above'
         else:
-            l = util.first_classbody_line(clazz)
-            top_or_bottom_pad = 1
+            l_i = util.first_classbody_line(clazz)
+            pos_mod = 'below'
 
-        has_anno = 0
-        spaces = util._indentation(l, lines)
-        field_lines = []
-        if anno_name:
-            field_lines.append(f'{spaces * " " if spaces else ""}@{anno_name}\n')
-            has_anno = 1
-        field_lines.append(f'{spaces * " " if spaces else ""}{acc_mod} {fieldtype} {name};\n')
-        lines[l + top_or_bottom_pad:1 + has_anno] = field_lines
-        # fixme add bottom/top spacing
+        field_lines = [f'{acc_mod} {fieldtype} {name};\n']
+        lines = util.match_indentation_and_insert(field_lines, l_i, lines, pos=pos_mod)
     return lines
 
 
@@ -143,19 +134,23 @@ def remove_all_anno(name: str, lines: List[str]) -> List[str]:
 
 
 @_reparse
-def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str]) -> List[str]:
+def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str], props: dict = None) -> List[str]:
     field_index = field.position.line - 1  # off by one
-    lines[field_index:1] = [f'@{anno}']
+    if props:
+        anno_lines = util.annotation_with_props_lines(anno, props)
+    else:
+        anno_lines = [f'@{anno}']
+    lines = util.match_indentation_and_insert(anno_lines, field_index, lines, pos='above')
     # todo fix spacing and tabbing
     return lines
 
 
+# fixme refactor to make props optional
 @_reparse
-def add_method_annotation_with_props(
-        # clazz: ClassDeclaration, # fixme maybe not needed since new type is passed in
-        method: MethodDeclaration, props: dict, anno: str, lines: List[str]) -> List[str]:
+def add_method_annotation_with_props(method: MethodDeclaration, props: dict, anno: str, lines: List[str]) -> List[str]:
     m_line = method.position.line - 1  # off by one
     anno_lines = util.annotation_with_props_lines(anno, props)
+    # fixme use match_indentation_and_insert
     lines[m_line: len(anno_lines)] = anno_lines  # insert just above the method signature, below other annotations
     return lines
 
@@ -193,9 +188,8 @@ def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]
         assignments.append(f'{begin}this.{varname} = {varname}{end}')
 
     constructor_lines = util.method_lines('public', '', clazz.name, params, assignments)
-    # todo fix spacing and tabbing
+    # todo use match_indentation_and_insert
     lines[const_line:len(constructor_lines)] = constructor_lines
-
     return lines
 
 
@@ -203,8 +197,8 @@ def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]
 def add_method(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], pos: int, lines: List[str],
                anno: str = None) -> List[str]:
     mlines = util.method_lines(acc_mod, rettype, name, args, body, anno)
+    # todo use match_indentation_and_insert
     lines[pos:len(mlines)] = mlines
-    # todo fix spacing and tabbing
     return lines
 
 
@@ -221,6 +215,7 @@ def add_import(path: str, lines: [str]) -> List[str]:
     imports = set([i.path for i in cu.imports])
     if path not in imports:
         l = util.last_import_line(cu)
+        # todo use match_indentation_and_insert
         lines[l + 1:1] = [f'import {path};\n']
     return lines
 

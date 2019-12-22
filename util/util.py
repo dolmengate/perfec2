@@ -1,6 +1,7 @@
 # # # # # # # # # # # #
 # lines and spacing
 #
+import itertools
 import traceback
 from typing import List
 
@@ -20,28 +21,61 @@ def _clazz(cu: CompilationUnit) -> ClassDeclaration:
     return cu.types[0]
 
 
-def _enter_line_if_not_empty(line: int, lines: List[str]) -> List[str]:
-    if lines[line] != '\n':
-        lines[line:1] = '\n'
+def _add_newline_if_not_empty(i: int, lines: List[str], pos: str = 'above') -> List[str]:
+    if pos == 'above':
+        pos_mod = 0
+    elif pos == 'below':
+        pos_mod = +1
+    else:
+        raise Exception("fixme ")
+    if lines[i] != '\n':
+        lines[i+pos_mod:1] = '\n'
     return lines
 
 
-def _indentation(line: int, lines: List[str]) -> int:
+def _add_newline(i: int, lines: [str], pos: str = 'above') -> [str]:
+    if pos == 'above':
+        pos_mod = 0
+    elif pos == 'below':
+        pos_mod = +1
+    else:
+        raise Exception("fixme ")
+    lines[i+pos_mod:1] = '\n'
+    return lines
+
+
+def _indentation(index: int, lines: List[str]) -> int:
     """
-    get number of columns from left for line
+    get indent spaces from @line in @lines
     :param lines:
-    :param line:
+    :param index:
     :return:
     """
-    line = lines[line]
-    if line.startswith(' '):
-        line.rstrip()
-        return line.rfind(' ') + 1
+    line = lines[index]
+    return len([s for s in itertools.takewhile(lambda c: c == ' ', line)])
 
 
-# def match_indentation_and_insert(insertee: [str], lines: [str]) -> [str]:
-#     todo implement
-    # return lines
+# fixme reparse?
+# fixme indentation should be additive to lines in add_lines
+def match_indentation_and_insert(add_lines: [str], index: int, insertee_lines: [str], pos: str = 'above', top_pad: int = 0, bot_pad: int = 0) -> [str]:
+    # add amount of indentation to all add_lines equal to the indentation on the line to be inserted at
+    if pos != 'below' and pos != 'above':
+        raise Exception("Insertion must be either 'below' or 'above' only")
+    if pos == 'below':
+        pos = 1
+    else:
+        pos = 0
+
+    # fixme find the indentation of the first line above or below that isn't a newline
+    indent = _indentation(index, insertee_lines)
+    for i, l in enumerate(add_lines):
+        add_lines[i] = l.rjust(len(l)+indent, ' ')
+    # insert add_lines into insertee_lines
+    final_insertion_index = index + pos
+    # _add_newline_if_not_empty(final_insertion_index, insertee_lines, 'above')
+    # insertee_lines[final_insertion_index: len(add_lines)] = add_lines
+    insertee_lines[final_insertion_index:0] = add_lines
+    return insertee_lines
 
 
 def first_classbody_line(clazz: ClassDeclaration) -> int:
