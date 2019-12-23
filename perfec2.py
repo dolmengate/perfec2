@@ -126,6 +126,11 @@ def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, 
 
 
 @_reparse
+def remove_class_anno(clazz: ClassDeclaration, name: str):
+    pass
+
+
+@_reparse
 def remove_all_anno(name: str, lines: List[str]) -> List[str]:
     for i, l in enumerate(lines):
         if l.find('@' + name) != -1 and l.rfind(';') == -1:
@@ -141,7 +146,6 @@ def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str], p
     else:
         anno_lines = [f'@{anno}']
     lines = util.match_indentation_and_insert(anno_lines, field_index, lines, pos='above')
-    # todo fix spacing and tabbing
     return lines
 
 
@@ -151,7 +155,8 @@ def add_method_annotation_with_props(method: MethodDeclaration, props: dict, ann
     m_line = method.position.line - 1  # off by one
     anno_lines = util.annotation_with_props_lines(anno, props)
     # fixme use match_indentation_and_insert
-    lines[m_line: len(anno_lines)] = anno_lines  # insert just above the method signature, below other annotations
+    util.match_indentation_and_insert(anno_lines, m_line, lines)
+    # lines[m_line: len(anno_lines)] = anno_lines  # insert just above the method signature, below other annotations
     return lines
 
 

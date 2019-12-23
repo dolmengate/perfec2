@@ -172,120 +172,91 @@ test_lines = [
 ]
 
 
-# todo add test case for multiline annotataion
 class Test_add_field_annotation(unittest.TestCase):
 
     def setUp(self) -> None:
         self.testee = undecorated(perfec2.add_field_annotation)
 
-    def test_happy(self):
+    @mock.patch('perfec2.util.annotation_with_props_lines')
+    @mock.patch('perfec2.util.match_indentation_and_insert')
+    def test_no_properties(self, match_indentation_and_insert, annotation_with_props_lines):
         field = Mock()
         position = PropertyMock()
-        position.line = 2
+        line = PropertyMock(return_value=1)
         type(field).position = position
+        type(position).line = line
 
-        lines = ['one\n', '    private String two;\n', '    three\n', 'four\n']
+        props = None
+        lines = [
+            'one\n',
+            '    private String two;\n',
+            '    three\n',
+            'four\n'
+        ]
         anno = 'hello'
 
-        actual = self.testee(field, anno, lines)
+        annotation_with_props_lines.return_value = ['doesnt matter, arg for match_indentation_and_insert']
+        match_indentation_and_insert.return_value = [
+            'one\n',
+            '\n',
+            '    @hello\n',
+            '    private String two;\n',
+            '\n',
+            '    three\n',
+            'four\n'
+        ]
 
-        position.assert_called_once_with()
-        # self.assertTrue(len(lines) == 5, 'Lines didnt increase')
-        # self.assertTrue(lines[1] == '@hello', 'Annotation is not on the expected line')
-        self.assertEqual(['one\n', '    @hello', '    private String two;\n', '    three\n', 'four\n'], lines)
-        # todo assert returned lines
-        # todo tabbing
+        actual = self.testee(field, anno, lines, props)
+        self.assertEqual(match_indentation_and_insert.return_value, actual)
 
+        annotation_with_props_lines.assert_not_called()
+        match_indentation_and_insert.assert_called_once()
 
-class Test__add_newline_if_not_empty(unittest.TestCase):
+    @mock.patch('perfec2.util.annotation_with_props_lines')
+    @mock.patch('perfec2.util.match_indentation_and_insert')
+    def test_with_properties(self, match_indentation_and_insert, annotation_with_props_lines):
+        field = Mock()
+        position = PropertyMock()
+        line = PropertyMock(return_value=1)
+        type(field).position = position
+        type(position).line = line
 
-    def setUp(self) -> None:
-        self.testee = undecorated(perfec2.util._add_newline_if_not_empty)
+        props = {
+            'some': '""',
+            'annotation': '"properties"',
+            'sldfk': 777,
+        }
+        lines = [
+            'one\n',
+            '    private String two;\n',
+            '    three\n',
+            'four\n'
+        ]
+        anno = 'hello'
 
-    def test_above(self):
-        i = 2
-        lines = ['one\n', '    two\n', '    three\n', 'four\n']
+        annotation_with_props_lines.return_value = ['doesnt matter, arg for match_indentation_and_insert']
+        match_indentation_and_insert.return_value = [
+            'one\n',
+            '\n',
+            '    @hello(\n',
+            '        some=""\n',
+            '        annotation="properties"\n',
+            '        sldfk=777'
+            '    )\n',
+            '    private String two;\n',
+            '\n',
+            '    three\n',
+            'four\n'
+        ]
 
-        self.testee(i, lines)
-        self.assertEqual(['one\n', '    two\n', '\n', '    three\n', 'four\n'], lines,
-                         "Expected and result don't match")
+        actual = self.testee(field, anno, lines, props)
+        self.assertEqual(match_indentation_and_insert.return_value, actual)
 
-    def test_below(self):
-        i = 2
-        lines = ['one\n', '    two\n', '    three\n', 'four\n']
+        annotation_with_props_lines.assert_called_with(anno, props)
+        match_indentation_and_insert.assert_called_once()
+        # # match_indentation_and_insert.assert_called_with( # fixme ????
+        #     annotation_with_props_lines.return_value, field.position.line.return_value, lines, pos='above')
 
-        self.testee(i, lines, pos='below')
-        self.assertEqual(['one\n', '    two\n', '    three\n', '\n', 'four\n'], lines,
-                         "Expected and result don't match")
-
-    def test_above_newline_present(self):
-        i = 2
-        lines = ['one\n', '    two\n', '\n', 'four\n']
-
-        self.testee(i, lines)
-        self.assertEqual(['one\n', '    two\n', '\n', 'four\n'], lines,
-                         "Expected and result don't match")
-
-    def test_below_newline_present(self):
-        i = 2
-        lines = ['one\n', '    two\n', '\n', 'four\n']
-
-        self.testee(i, lines, pos='below')
-        self.assertEqual(['one\n', '    two\n', '\n', 'four\n'], lines,
-                         "Expected and result don't match")
-
-
-class Test__add_newline(unittest.TestCase):
-
-    def setUp(self) -> None:
-        self.testee = undecorated(perfec2.util._add_newline)
-
-    def test_above(self):
-        i = 2
-        lines = ['one\n', '    two\n', '    three\n', 'four\n']
-
-        self.testee(i, lines)
-        self.assertEqual(['one\n', '    two\n', '\n', '    three\n', 'four\n'], lines,
-                         "Expected and actual don't match")
-
-    def test_below(self):
-        i = 2
-        lines = ['one\n', '    two\n', '    three\n', 'four\n']
-
-        self.testee(i, lines, pos='below')
-        self.assertEqual(['one\n', '    two\n', '    three\n', '\n', 'four\n'], lines,
-                         "Expected and actual don't match")
-
-
-class Test_match_indentation_and_insert(unittest.TestCase):
-
-    def setUp(self) -> None:
-        self.testee = undecorated(perfec2.util.match_indentation_and_insert)
-
-    @mock.patch('util.util._indentation')
-    def test_above(self, _indentation):
-        add_lines = ['me\n', 'dot\n', 'com\n']
-        lines = ['one\n', '   two\n', '   three\n', 'four\n']
-        index = 2
-        _indentation.return_value = 3
-        # todo util._add_newline_if_not_empty.side_effect = []
-
-        self.testee(add_lines, index, lines)
-        self.assertEqual(['one\n', '   two\n', '   me\n', '   dot\n', '   com\n', '   three\n', 'four\n'], lines,
-                         "Expected and actual don't match")
-
-    @mock.patch('util.util._indentation')
-    def test_below(self, _indentation):
-        add_lines = ['me\n', 'dot\n', 'com\n']
-        lines = ['one\n', '   two\n', '   three\n', 'four\n']
-        index = 2
-        _indentation.return_value = 3
-        # todo util._add_newline_if_not_empty.side_effect = []
-
-        self.testee(add_lines, index, lines, pos='below')
-
-        self.assertEqual(['one\n', '   two\n', '   three\n', '   me\n', '   dot\n', '   com\n', 'four\n'], lines,
-                         "Expected and actual don't match")
 
 class Test_field_height(unittest.TestCase):
     # todo
@@ -424,7 +395,11 @@ class Test_field_spacing(unittest.TestCase):
         ])
         self.assertEqual(add_newlines_retvals[1], actual)
 
-    def test_with_existing_annotations(self, util):
+    def test_existing_annotations(self, util):
+        # todo
+        pass
+
+    def test_existing_multiline_annotation(self, util):
         # todo
         pass
 

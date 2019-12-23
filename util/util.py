@@ -57,7 +57,7 @@ def _indentation(index: int, lines: List[str]) -> int:
 
 # fixme reparse?
 # fixme indentation should be additive to lines in add_lines
-def match_indentation_and_insert(add_lines: [str], index: int, insertee_lines: [str], pos: str = 'above', top_pad: int = 0, bot_pad: int = 0) -> [str]:
+def match_indentation_and_insert(add_lines: [str], index: int, insertee_lines: [str], pos: str = 'above', indent_mod = 0) -> [str]:
     # add amount of indentation to all add_lines equal to the indentation on the line to be inserted at
     if pos != 'below' and pos != 'above':
         raise Exception("Insertion must be either 'below' or 'above' only")
@@ -67,7 +67,7 @@ def match_indentation_and_insert(add_lines: [str], index: int, insertee_lines: [
         pos = 0
 
     # fixme find the indentation of the first line above or below that isn't a newline
-    indent = _indentation(index, insertee_lines)
+    indent = _indentation(index, insertee_lines) + indent_mod
     for i, l in enumerate(add_lines):
         add_lines[i] = l.rjust(len(l)+indent, ' ')
     # insert add_lines into insertee_lines
@@ -168,7 +168,7 @@ def method_lines(acc_mod: str, rettype: str, name: str, args: List[str], body: L
 # annotation utils
 #
 def annotation_with_props_lines(name: str, props: dict) -> [str]:
-    annoprops_lines = [f'{k}={v},\n' for k, v in props.items()]
+    annoprops_lines = [f'    {k}={v},\n' for k, v in props.items()]
     annoprops_lines[-1] = annoprops_lines[-1].replace(',\n', '\n')
     return [f'@{name}(\n'] + \
            annoprops_lines + \
