@@ -262,6 +262,7 @@ class Test_field_height(unittest.TestCase):
     # todo
     pass
 
+
 class Test_field_spacing(unittest.TestCase):
 
     def setUp(self) -> None:
@@ -340,8 +341,8 @@ class Test_field_spacing(unittest.TestCase):
 
         actual = self.testee(field, lines)
         _add_newline_if_not_empty.assert_has_calls([
-                call(field.position.line - 1, lines, pos='bottom'),
-                call(field.position.line - 1 - field_height.return_value, add_newlines_retvals[0])
+            call(field.position.line - 1, lines, pos='bottom'),
+            call(field.position.line - 1 - field_height.return_value, add_newlines_retvals[0])
         ])
         self.assertEqual(add_newlines_retvals[1], actual)
 
@@ -379,12 +380,15 @@ class Test_field_spacing(unittest.TestCase):
         type(field).position = position
         type(position).line = line
 
-        lines = ['public class One {\n', '@MyAnnotation\n', '   private String two;\n', '   public List<> three;\n', '\n']
+        lines = ['public class One {\n', '@MyAnnotation\n', '   private String two;\n', '   public List<> three;\n',
+                 '\n']
 
         field_height.return_value = 999  # doesnt matter
         add_newlines_retvals = [
-            ['public class One {\n', '@MyAnnotation\n', '   private String two;\n', '\n', '   public List<> three;\n', '\n'],
-            ['public class One {\n', '\n', '@MyAnnotation\n', '   private String two;\n', '\n', '   public List<> three;\n', '\n'],
+            ['public class One {\n', '@MyAnnotation\n', '   private String two;\n', '\n', '   public List<> three;\n',
+             '\n'],
+            ['public class One {\n', '\n', '@MyAnnotation\n', '   private String two;\n', '\n',
+             '   public List<> three;\n', '\n'],
         ]
         _add_newline_if_not_empty.side_effect = add_newlines_retvals
 
@@ -428,6 +432,127 @@ class TestFindTestee(unittest.TestCase):
         util.field_has_anno.side_effect = [False, False, False]
 
         type(clazz).fields = fields
+
+
+class Test__add_newline_if_not_empty(unittest.TestCase):
+
+    def setUp(self) -> None:
+        self.testee = undecorated(perfec2.util._add_newline_if_not_empty)
+
+    def test_above(self):
+        i = 2
+        lines = ['one\n', '    two\n', '    three\n', 'four\n']
+
+        self.testee(i, lines)
+        self.assertEqual(['one\n', '    two\n', '\n', '    three\n', 'four\n'], lines,
+                         "Expected and result don't match")
+
+    def test_below(self):
+        i = 2
+        lines = ['one\n', '    two\n', '    three\n', 'four\n']
+
+        self.testee(i, lines, pos='below')
+        self.assertEqual(['one\n', '    two\n', '    three\n', '\n', 'four\n'], lines,
+                         "Expected and result don't match")
+
+    def test_above_newline_present(self):
+        i = 2
+        lines = ['one\n', '    two\n', '\n', 'four\n']
+
+        self.testee(i, lines)
+        self.assertEqual(['one\n', '    two\n', '\n', 'four\n'], lines,
+                         "Expected and result don't match")
+
+    def test_below_newline_present(self):
+        i = 2
+        lines = ['one\n', '    two\n', '\n', 'four\n']
+
+        self.testee(i, lines, pos='below')
+        self.assertEqual(['one\n', '    two\n', '\n', 'four\n'], lines,
+                         "Expected and result don't match")
+
+
+class Test__add_newline(unittest.TestCase):
+
+    def setUp(self) -> None:
+        self.testee = undecorated(perfec2.util._add_newline)
+
+    def test_above(self):
+        i = 2
+        lines = ['one\n', '    two\n', '    three\n', 'four\n']
+
+        self.testee(i, lines)
+        self.assertEqual(['one\n', '    two\n', '\n', '    three\n', 'four\n'], lines,
+                         "Expected and actual don't match")
+
+    def test_below(self):
+        i = 2
+        lines = ['one\n', '    two\n', '    three\n', 'four\n']
+
+        self.testee(i, lines, pos='below')
+        self.assertEqual(['one\n', '    two\n', '    three\n', '\n', 'four\n'], lines,
+                         "Expected and actual don't match")
+
+
+class Test_match_indentation_and_insert(unittest.TestCase):
+
+    def setUp(self) -> None:
+        self.testee = undecorated(perfec2.util.match_indentation_and_insert)
+
+    @mock.patch('util.util._indentation')
+    def test_above(self, _indentation):
+        add_lines = ['me\n', 'dot\n', 'com\n']
+        lines = ['one\n', '   two\n', '   three\n', 'four\n']
+        index = 2
+        _indentation.return_value = 3
+        # todo util._add_newline_if_not_empty.side_effect = []
+
+        self.testee(add_lines, index, lines)
+        self.assertEqual(['one\n', '   two\n', '   me\n', '   dot\n', '   com\n', '   three\n', 'four\n'], lines,
+                         "Expected and actual don't match")
+
+    @mock.patch('util.util._indentation')
+    def test_below(self, _indentation):
+        add_lines = ['me\n', 'dot\n', 'com\n']
+        lines = ['one\n', '   two\n', '   three\n', 'four\n']
+        index = 2
+        _indentation.return_value = 3
+        # todo util._add_newline_if_not_empty.side_effect = []
+
+        self.testee(add_lines, index, lines, pos='below')
+
+        self.assertEqual(['one\n', '   two\n', '   three\n', '   me\n', '   dot\n', '   com\n', 'four\n'], lines,
+                         "Expected and actual don't match")
+
+
+# class Test_method_has_param_types(unittest.TestCase):
+#
+#     def setUp(self) -> None:
+#         self.testee = perfec2.util.method_has_param_types
+#
+#     def test_(self):
+#         method = Mock()
+#         # method.param.type.name
+#         name1 = PropertyMock(return_value='a')
+#         type1 = PropertyMock()
+#         type(type1).name = name1
+#         param1 = PropertyMock()
+#         type(param1).name = name1
+#         # param2 = Mock()
+#         # name2 = PropertyMock(return_value='a')
+#         # param2.name = name2
+#         # name3 = PropertyMock(return_value='b')
+#         # param3 = Mock()
+#         # param3.name = name3
+#
+#         type(method).parameters = PropertyMock(return_value=[param1])
+#
+#         print(method.parameters[0].type.name.return_value)
+#
+#         actual = self.testee(method, 'a',
+#                              # 'a'
+#                              )
+#         self.assertTrue(actual)
 
 # mock a dependency method call
 

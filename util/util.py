@@ -5,7 +5,8 @@ import itertools
 import traceback
 from typing import List
 
-from javalang.tree import ClassDeclaration, FieldDeclaration, ConstructorDeclaration, CompilationUnit, MethodDeclaration
+from javalang.tree import ClassDeclaration, FieldDeclaration, ConstructorDeclaration, CompilationUnit, \
+    MethodDeclaration, Annotation, FormalParameter
 
 
 def last_import_line(cu: CompilationUnit) -> int:
@@ -156,12 +157,124 @@ def method_has_annotation(method: MethodDeclaration, anno: str) -> bool:
     return any(annos)
 
 
+def method_annotation(method: MethodDeclaration, anno: str) -> Annotation:
+    annos = list(filter(lambda a: a.name == anno, method.annotations))
+    return annos[0]
+
+
 def method_lines(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], anno: str = None) -> List[
     str]:
     return [f'{"@" + anno if anno else ""}\n',
             f'{acc_mod} {rettype + " " if rettype else ""}{name}({", ".join(args)}) {{\n'] + \
            body + \
            ['}\n']
+
+
+def method_has_param_types(m: MethodDeclaration, type: str, freq: int):
+    n = len([p for p in m.parameters if p.type.name == type])
+    return n == freq
+
+
+def parameter_annotation(p: FormalParameter, anno: str) -> Annotation:
+    annos = [a for a in p.annotations if a.name == anno]
+    return annos[0] if annos else None
+
+
+def is_getbyuid_web_endpoint(m: MethodDeclaration) -> bool:
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_get = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'GET'])
+    one_param = len(m.parameters) == 1
+    has_params = method_has_param_types(m, 'UUID', 1)
+    return req_map and is_get and one_param and has_anno and has_params
+
+
+def is_updatebyuid_web_endpoint(m: MethodDeclaration) -> bool:
+    # method RequestMethod.PUT, UUID param and @RequestBody param
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_put = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'PUT'])
+    has_params = method_has_param_types(m, 'UUID', 1) and method_has_param_types(m, 'BindingResult', 1)
+    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    return req_map and is_put and has_anno and has_params and has_request_body
+
+
+def is_deletebyuid_web_endpoint(m: MethodDeclaration) -> bool:
+    # method RequestMethod.DELETE, UUID param
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_deelte = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'DELETE'])
+    one_param = len(m.parameters) == 1
+    has_params = method_has_param_types(m, 'UUID', 1)
+    return req_map and is_deelte and one_param and has_anno and has_params
+
+
+def is_create_web_endpoint(m: MethodDeclaration) -> bool:
+    # todo method RequestMethod.POST, one @RequestBody param
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_post = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'POST'])
+    param_number = len(m.parameters) > 1
+    has_params = method_has_param_types(m, 'BindingResult', 1) and not method_has_param_types(m, 'UUID', 1)
+    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    return req_map and is_post and has_anno and has_params and has_request_body and param_number
+
+
+def is_associate_web_endpoint(m: MethodDeclaration) -> bool:
+    # todo method RequestMethod.PUT, two UUID params
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_put = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'PUT'])
+    two_params = len(m.parameters) > 1
+    has_params = method_has_param_types(m, 'UUID', 2) or method_has_param_types(m, 'UUID', 3)
+    return is_put and two_params and has_anno and has_params
+
+
+def is_disassociate_web_endpoint(m: MethodDeclaration) -> bool:
+    # todo method RequestMethod.DELETE, two UUID params
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_delete = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'DELETE'])
+    two_params = len(m.parameters) > 1
+    has_params = method_has_param_types(m, 'UUID', 2) or method_has_param_types(m, 'UUID', 3)
+    return is_delete and two_params and has_anno and has_params
+
+
+def is_create_and_associate_web_endpoint(m: MethodDeclaration) -> bool:
+    # todo method RequestMethod.POST, one UUID param, one @RequestBody
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_post = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'POST'])
+    params_number = len(m.parameters) > 1
+    has_params = method_has_param_types(m, 'UUID', 1)
+    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    return is_post and params_number and has_anno and has_params and has_request_body
+
+
+def is_get_associations_web_endpoint(m: MethodDeclaration) -> bool:
+    # todo method RequestMethod.POST, one UUID param, one @RequestBody
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_post = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'GET'])
+    params_number = len(m.parameters) > 1
+    has_params = method_has_param_types(m, 'UUID', 1) or method_has_param_types(m, 'UUID', 2) or method_has_param_types(m, 'UUID', 3)
+    return is_post and params_number and has_anno and has_params
 
 
 # # # # # # # # # # # #

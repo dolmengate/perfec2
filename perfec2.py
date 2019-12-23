@@ -10,29 +10,6 @@ from util import util
 cu = None
 
 
-# todo generify this method to work with any property of a class with any condition
-def methods_with_anno(clazz, anno: str):
-    completed = []  # names of methods already yielded
-    name = clazz.name
-    next = 0
-    total = len(this_clazz().methods)  # initial length
-    if this_clazz().name == name:  # limit looping through methods of the desired class only
-        while True:
-            curr_total = len(this_clazz().methods)
-            if total != curr_total:     # file was modified since last iteration, restart
-                total = curr_total
-                completed.clear()
-                next = 0
-                continue
-            next_m = this_clazz().methods[next]
-            if util.method_has_annotation(next_m, anno) and next_m.name not in completed:
-                completed.append(next_m.name)
-                yield next_m
-            next += 1
-            if next == curr_total:
-                break
-
-
 def _reparse(func):
     def wrapper(*args, **kwargs):
         lines = func(*args, **kwargs)
@@ -197,6 +174,29 @@ def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]
     lines[const_line:len(constructor_lines)] = constructor_lines
     return lines
 
+
+# todo generify this method to work with any property of a class with any condition
+def methods_with_anno(clazz, anno: str):
+    """ can be used to add methods or annotations while looping through them """
+    completed = []  # names of methods already yielded
+    name = clazz.name
+    next = 0
+    total = len(this_clazz().methods)  # initial length
+    if this_clazz().name == name:  # limit looping through methods of the desired class only
+        while True:
+            curr_total = len(this_clazz().methods)
+            if total != curr_total:     # file was modified since last iteration, restart
+                total = curr_total
+                completed.clear()
+                next = 0
+                continue
+            next_m = this_clazz().methods[next]
+            if util.method_has_annotation(next_m, anno) and next_m.name not in completed:
+                completed.append(next_m.name)
+                yield next_m
+            next += 1
+            if next == curr_total:
+                break
 
 @_reparse
 def add_method(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], pos: int, lines: List[str],
