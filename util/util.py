@@ -1,6 +1,10 @@
 # # # # # # # # # # # #
 # lines and spacing
 #
+import os
+import subprocess
+import traceback
+import re
 import itertools
 import traceback
 from typing import List
@@ -175,11 +179,9 @@ def method_has_param_types(m: MethodDeclaration, type: str, freq: int):
     return n == freq
 
 
-def parameter_annotation(p: FormalParameter, anno: str) -> Annotation:
-    annos = [a for a in p.annotations if a.name == anno]
-    return annos[0] if annos else None
-
-
+# # # # # # # # # # # #
+#  Entities CRUD
+#
 def is_getbyuid_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
@@ -228,6 +230,9 @@ def is_create_web_endpoint(m: MethodDeclaration) -> bool:
     return req_map and is_post and has_anno and has_params and has_request_body and param_number
 
 
+# # # # # # # # # # # #
+#  Entities associate
+#
 def is_associate_web_endpoint(m: MethodDeclaration) -> bool:
     # todo method RequestMethod.PUT, two UUID params
     has_anno = method_has_annotation(m, 'RequestMapping')
@@ -278,6 +283,99 @@ def is_get_associations_web_endpoint(m: MethodDeclaration) -> bool:
 
 
 # # # # # # # # # # # #
+#  Types CRUD
+#
+def is_get_type_by_key_web_endpoint(m: MethodDeclaration) -> bool:
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_get = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'GET'])
+    has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
+    params_number = len(m.parameters) == 1
+    has_params = method_has_param_types(m, 'String', 1)
+    return is_get and params_number and has_anno and has_params and has_key_in_mapping
+
+
+def is_delete_type_by_key_web_endpoint(m: MethodDeclaration) -> bool:
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_delte = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'DELETE'])
+    has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
+    params_number = len(m.parameters) == 1
+    has_params = method_has_param_types(m, 'String', 1)
+    return is_delte and params_number and has_anno and has_params and has_key_in_mapping
+
+
+def is_update_type_by_key_web_endpoint(m: MethodDeclaration) -> bool:
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_update = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'PUT'])
+    has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
+    params_number = len(m.parameters) >= 1
+    has_params = method_has_param_types(m, 'String', 1) and method_has_param_types(m, 'BindingResult', 1)
+    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    return is_update and params_number and has_anno and has_params and has_key_in_mapping and has_request_body
+
+
+def is_create_type_by_key_web_endpoint(m: MethodDeclaration) -> bool:
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    is_post = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'POST'])
+    params_number = len(m.parameters) == 2
+    has_params = method_has_param_types(m, 'BindingResult', 1)
+    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    return is_post and params_number and has_anno and has_params and has_request_body
+
+
+# # # # # # # # # # # #
+#  Types Association
+#
+
+def is_associate_type_with_entity_web_endpoint(m: MethodDeclaration) -> bool:
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
+    is_method = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'PUT'])
+    params_number = len(m.parameters) == 2
+    has_params = method_has_param_types(m, 'String', 1) and method_has_param_types(m, 'UUID', 1)
+    return is_method and params_number and has_anno and has_params and has_key_in_mapping
+
+
+def is_disassociate_type_with_entity_web_endpoint(m: MethodDeclaration) -> bool:
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
+    is_method = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'DELETE'])
+    params_number = len(m.parameters) == 2
+    has_params = method_has_param_types(m, 'String', 1) and method_has_param_types(m, 'UUID', 1)
+    return is_method and params_number and has_anno and has_params and has_key_in_mapping
+
+
+def is_get_type_associations_web_endpoint(m: MethodDeclaration) -> bool:
+    has_anno = method_has_annotation(m, 'RequestMapping')
+    if not has_anno:
+        return False
+    req_map = method_annotation(m, 'RequestMapping')
+    has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
+    is_method = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'GET'])
+    params_number = len(m.parameters) > 2
+    has_params = method_has_param_types(m, 'String', 1) and method_has_param_types(m, 'Pageable', 1)
+    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    return is_method and params_number and has_anno and has_params and has_request_body and has_key_in_mapping
+
+
+# # # # # # # # # # # #
 # annotation utils
 #
 def annotation_with_props_lines(name: str, props: dict) -> [str]:
@@ -286,6 +384,11 @@ def annotation_with_props_lines(name: str, props: dict) -> [str]:
     return [f'@{name}(\n'] + \
            annoprops_lines + \
            [')\n']
+
+
+def parameter_annotation(p: FormalParameter, anno: str) -> Annotation:
+    annos = [a for a in p.annotations if a.name == anno]
+    return annos[0] if annos else None
 
 
 # # # # # # # # # # # #
@@ -308,3 +411,60 @@ def write_file(newlines, file_obj):
     for nl in newlines:
         file_obj.write(nl)
     file_obj.truncate()
+
+
+# # # # # # # # # # # #
+# command line
+#
+def cli_simple(cmd: str, timeout: int, location: str = os.getcwd()):
+    print(f'executing command: {cmd} at {location}')
+    try:
+        with subprocess.Popen(
+                cmd, shell=True, cwd=location, universal_newlines=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE
+        ) as p:
+            o,e = p.communicate(timeout=timeout)
+            if e:
+                print(e)
+                raise Exception(f'Execution of command {cmd} failed')
+            else:
+                return o
+    except subprocess.CalledProcessError as err:
+        print(traceback.format_exc())
+
+
+def set_entities_version(version: str, repo_path: str):
+    print(f'setting entities to version {version} in project {repo_path.split("/")[-1]}')
+    matcher = re.compile(r'(\s*<acctmgmt.entities.version>)(.*)(</acctmgmt.entities.version>\s*\n)')
+    with open(f'{repo_path}/pom.xml', 'r+') as f:
+        lines = f.readlines()
+        for i, l in enumerate(lines):
+            match = matcher.match(l)
+            if match:
+                lines[i] = f'{match.group(1)}{version}{match.group(3)}'
+                break
+        write_file(lines, f)
+
+
+def git_add_src_files(path: str):
+    print(f'adding source files to staging for repo {path.split("/")[-1]}')
+    return cli_simple('git add src/main/java', 1, path)
+
+
+def git_add_test_files(path: str):
+    print(f'adding test files to staging for repo {path.split("/")[-1]}')
+    return cli_simple('git add src/test/java', 1, path)
+
+
+def mvn_clean_test(path: str):
+    print(f'testing jar for repo {path.split("/")[-1]}')
+    return cli_simple('mvn clean test', 20, path)
+
+
+def mvn_clean_compile(path: str):
+    print(f'compiling repo {path.split("/")[-1]}')
+    return cli_simple('mvn clean compile', 15, path)
+
+
+def mvn_clean_install(path: str):
+    print(f'compiling repo {path.split("/")[-1]}')
+    return cli_simple('mvn clean install', 30, path)

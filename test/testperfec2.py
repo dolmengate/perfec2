@@ -399,13 +399,13 @@ class Test_field_spacing(unittest.TestCase):
         ])
         self.assertEqual(add_newlines_retvals[1], actual)
 
-    def test_existing_annotations(self, util):
-        # todo
-        pass
-
-    def test_existing_multiline_annotation(self, util):
-        # todo
-        pass
+    # def test_existing_annotations(self, util):
+    #     # todo
+    #     pass
+    #
+    # def test_existing_multiline_annotation(self, util):
+    #     # todo
+    #     pass
 
 
 # fixme move into main module tests module
