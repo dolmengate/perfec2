@@ -9,6 +9,7 @@ verify_ssl = true
 javalang = "*"
 pytest = "*"
 undecorated = "*"
+deprecated = "*"
 
 [requires]
 python_version = "3.7"

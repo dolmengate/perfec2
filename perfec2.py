@@ -2,8 +2,10 @@ import traceback
 from typing import List, Callable
 
 import javalang
+from deprecated import deprecated
+from javalang.ast import Node
 from javalang.parser import JavaSyntaxError
-from javalang.tree import ClassDeclaration, FieldDeclaration, MethodDeclaration
+from javalang.tree import ClassDeclaration, FieldDeclaration, MethodDeclaration, Annotation
 
 from util import util
 
@@ -25,7 +27,7 @@ def _reparse(func):
 
 
 @_reparse
-def field_spacing(fd: FieldDeclaration, lines: List[str]) -> List[str]:
+def field_spacing(fd: FieldDeclaration, lines: [str]) -> [str]:
     """
     add spacing if required above and below a field
     taking into account its annotations
@@ -72,7 +74,7 @@ def process_file(path: str, classfile_op: Callable, testfile_op: Callable = lamb
 
 
 @_reparse
-def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, lines: List[str], anno_name) -> List[str]:
+def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, lines: [str], anno_name) -> [str]:
     """
     Add a field to a class
     :param clazz:
@@ -103,20 +105,53 @@ def add_field(clazz: ClassDeclaration, fieldtype: str, name: str, acc_mod: str, 
 
 
 @_reparse
-def remove_class_anno(clazz: ClassDeclaration, name: str):
-    pass
+def remove_node_annotation(member: Node, anno: str, lines: [str]) -> [str]:
+    """ remove an annotation from a field, class or method. wont throw an exception """
+    annos = [a for a in member.annotations if a.name == anno]
+    if annos:
+        del lines[annos[0].position.line - 1]
+    else:
+        print(f'Member {member.name} has no annotation @{anno}')
+    return lines
+
+
+def get_class_annotation(clazz: ClassDeclaration, anno: str) -> Annotation:
+    """ get an annotation from a class or None """
+    annos = [a for a in clazz.annotations if a.name == anno]
+    if annos:
+        return annos[0]
 
 
 @_reparse
-def remove_all_anno(name: str, lines: List[str]) -> List[str]:
+def add_node_annotation(node: Node, anno_name: str, lines: [str], anno_props: dict = None,
+                        oneline: bool = False) -> [str]:
+    """ add an annotation with optional properties to a class, field, or method """
+    if isinstance(node, ClassDeclaration):
+        i = util.first_classbody_line(node) - 1
+    else:
+        i = node.position.line - 1
+    if anno_props:
+        anno_lines = util.annotation_with_props_lines(anno_name, anno_props, oneline=oneline)
+    else:
+        anno_lines = [f'@{anno_name}\n']
+    lines = util.match_indentation_and_insert(anno_lines, i, lines, pos='above')
+    return lines
+
+
+@_reparse
+def remove_all_anno(name: str, lines: [str]) -> [str]:
+    """ remove all single-line annotations of name from lines """
+    # fixme account for multiline annotations
     for i, l in enumerate(lines):
         if l.find('@' + name) != -1 and l.rfind(';') == -1:
             del lines[i]
     return lines
 
 
+@deprecated
 @_reparse
-def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str], props: dict = None) -> List[str]:
+def add_field_annotation(field: FieldDeclaration, anno: str, lines: [str], props: dict = None) -> [str]:
+    """ add an annotation with optional properties to a field"""
     field_index = field.position.line - 1  # off by one
     if props:
         anno_lines = util.annotation_with_props_lines(anno, props)
@@ -126,19 +161,8 @@ def add_field_annotation(field: FieldDeclaration, anno: str, lines: List[str], p
     return lines
 
 
-# fixme refactor to make props optional
 @_reparse
-def add_method_annotation_with_props(method: MethodDeclaration, props: dict, anno: str, lines: List[str]) -> List[str]:
-    m_line = method.position.line - 1  # off by one
-    anno_lines = util.annotation_with_props_lines(anno, props)
-    # fixme use match_indentation_and_insert
-    util.match_indentation_and_insert(anno_lines, m_line, lines)
-    # lines[m_line: len(anno_lines)] = anno_lines  # insert just above the method signature, below other annotations
-    return lines
-
-
-@_reparse
-def remove_fields(fields: List[FieldDeclaration], lines: List[str]) -> List[str]:
+def remove_fields(fields: [FieldDeclaration], lines: [str]) -> [str]:
     for f in fields:
         del lines[f.position.line - 1]  # off by one
         for a in f.annotations:
@@ -146,14 +170,14 @@ def remove_fields(fields: List[FieldDeclaration], lines: List[str]) -> List[str]
     return lines
 
 
-def constr_params_from_fielddeclrs(fields: List[FieldDeclaration]) -> List[str]:
+def constr_params_from_fielddeclrs(fields: [FieldDeclaration]) -> [str]:
     return [f'{f.type.name} '
             f'{list(f.declarators)[0].name if len(f.declarators) else ""}'
             for f in fields]
 
 
 @_reparse
-def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]) -> List[str]:
+def add_constructor(params: [str], clazz: ClassDeclaration, lines: [str]) -> [str]:
     """
     add a constructor to this class
     :param params:
@@ -175,32 +199,107 @@ def add_constructor(params: List[str], clazz: ClassDeclaration, lines: List[str]
     return lines
 
 
-# todo generify this method to work with any property of a class with any condition
-def methods_with_anno(clazz, anno: str):
-    """ can be used to add methods or annotations while looping through them """
+def replace_annotation_on_members(clazz: ClassDeclaration, member_type: str, lines: [str], target_anno_name: str,
+                                  replacement_anno_name: str, gen_props: Callable = None, oneline: bool = False):
+    """
+    replace an existing annotation with a new one (with or without parameters) on all fields or methods
+    :param clazz:                       class to modify
+    :param member_type:                 type of member ('fields' or 'methods'
+    :param lines:                       java file lines
+    :param target_anno_name:           name of the annotation to remove
+    :param replacement_anno_name:       name of the annotation to add in place of removed_anno_name
+    :param gen_props:                   a function to generate the properties for the replacement annotation
+                                        should take the member (some type of Node) as its only argument and return a dict
+    :param oneline:                     boolean: annotation should be all on one line
+    :return:
+    """
+    last_m, new_props = None, None
+
+    def remove_target(m, lines) -> [str]:
+        if util.method_has_annotation(m, target_anno_name):
+            existing_anno = util.get_method_annotation(m, target_anno_name)
+            nonlocal last_m, new_props
+            new_props = gen_props(m)
+            lines = remove_node_annotation(m, existing_anno.name, lines)
+            last_m = m
+        return lines
+
+    def add_replacement(m, lines) -> [str]:
+        if last_m and m.name == last_m.name:
+            lines = add_node_annotation(m, replacement_anno_name, lines, anno_props=new_props, oneline=oneline)
+        return lines
+
+    return _do_all_class_members(clazz, member_type, lines, [remove_target, add_replacement])
+
+
+def annotate_methods_having_annotation(clazz: ClassDeclaration, lines: [str], target_anno: str, add_anno: str,
+                                       gen_props: Callable = None) -> [str]:
+    """
+    annotate all methods on a class that have existing_anno
+    :param clazz:           class to have its methods annotated
+    :param lines:           class file lines
+    :param target_anno:     annotation to select methods by. only methods with this annotation will be annotated with
+    :param add_anno:        annotation to add on the same method as target_anno
+    :param gen_props:       function to create the properties for each MethodDeclaration. Takes a MethodDeclaration as its
+                            only argument and returns a dict of properties
+    :return:                java class file lines
+    """
+
+    def add_annotation_where_other_anno_exists(m, lines):
+        if util.method_has_annotation(m, target_anno):
+            props = gen_props(m)
+            add_node_annotation(m, add_anno, lines, anno_props=props, oneline=False)
+        return lines
+
+    return _do_all_class_members(clazz, 'methods', lines, [add_annotation_where_other_anno_exists])
+
+
+def _do_all_class_members(clazz: ClassDeclaration, member_type: str, lines: [str], operations: [Callable],
+                          args: [dict] = None) -> [str]:
+    """
+    operate on class members while looping through them
+    :param clazz:       class whose members will be operated on
+    :param member_type: 'methods' or 'fields'
+    :param lines:       java class file lines
+    :param operations:  list of Callables performed on each member_type of the clazz. first arg must be a member_type,
+                        and have an arg 'lines'. Must return its own 'lines'.
+    :param args:        list of other optional arguments to be passed in parallel to operations. useful if you want to
+                        just call this function directly rather than defining your operations in a wrapper function
+    :return:            java class file lines
+    """
+    if not getattr(this_clazz(), member_type, None):
+        raise Exception(f'Class {clazz.name} has no \'{member_type}\' members')
     completed = []  # names of methods already yielded
-    name = clazz.name
     next = 0
-    total = len(this_clazz().methods)  # initial length
-    if this_clazz().name == name:  # limit looping through methods of the desired class only
-        while True:
-            curr_total = len(this_clazz().methods)
-            if total != curr_total:     # file was modified since last iteration, restart
-                total = curr_total
-                completed.clear()
-                next = 0
-                continue
-            next_m = this_clazz().methods[next]
-            if util.method_has_annotation(next_m, anno) and next_m.name not in completed:
-                completed.append(next_m.name)
-                yield next_m
-            next += 1
-            if next == curr_total:
-                break
+    total = len(clazz.methods)  # initial length
+    next_m = getattr(clazz, member_type)[next]  # initial member
+    ret_lines = lines  # set initial lines
+    while True:
+        curr_total = len(getattr(this_clazz(), member_type))
+        if total != curr_total:  # file was modified since last iteration, restart
+            total = curr_total
+            completed.clear()
+            next = 0
+            continue
+        # todo accumulate?
+        for i, o in enumerate(operations):
+            # fixme this doesn't keep up with added/removed members? only changed lines
+            """ get [next] repeatedly since lines probably changed in the course of 'operations'"""
+            next_m = getattr(this_clazz(), member_type)[next]
+            if next_m.name not in completed:
+                if args:
+                    ret_lines = o(next_m, lines=ret_lines, **args[i])
+                else:
+                    ret_lines = o(next_m, lines=ret_lines)
+        completed.append(next_m.name)
+        next += 1
+        if next == curr_total:
+            return ret_lines
+
 
 @_reparse
-def add_method(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], pos: int, lines: List[str],
-               anno: str = None) -> List[str]:
+def add_method(acc_mod: str, rettype: str, name: str, args: [str], body: [str], pos: int, lines: [str],
+               anno: str = None) -> [str]:
     mlines = util.method_lines(acc_mod, rettype, name, args, body, anno)
     # todo use match_indentation_and_insert
     lines[pos:len(mlines)] = mlines
@@ -208,12 +307,11 @@ def add_method(acc_mod: str, rettype: str, name: str, args: List[str], body: Lis
 
 
 @_reparse
-def add_import(path: str, lines: [str]) -> List[str]:
+def add_import(path: str, lines: [str]) -> [str]:
     """
     add an import to this class if not already present
     :param lines:
     :param path:
-    :param cu:
     :return:
     """
     global cu
@@ -226,7 +324,7 @@ def add_import(path: str, lines: [str]) -> List[str]:
 
 
 @_reparse
-def remove_import(path: str, lines: List[str]) -> List[str]:
+def remove_import(path: str, lines: [str]) -> [str]:
     global cu
     del lines[list(filter(lambda i: i.path == path, cu.imports))[0].position.line]
     # fixme

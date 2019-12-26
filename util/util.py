@@ -3,11 +3,9 @@
 #
 import os
 import subprocess
-import traceback
 import re
 import itertools
 import traceback
-from typing import List
 
 from javalang.tree import ClassDeclaration, FieldDeclaration, ConstructorDeclaration, CompilationUnit, \
     MethodDeclaration, Annotation, FormalParameter
@@ -26,7 +24,7 @@ def _clazz(cu: CompilationUnit) -> ClassDeclaration:
     return cu.types[0]
 
 
-def _add_newline_if_not_empty(i: int, lines: List[str], pos: str = 'above') -> List[str]:
+def _add_newline_if_not_empty(i: int, lines: [str], pos: str = 'above') -> [str]:
     if pos == 'above':
         pos_mod = 0
     elif pos == 'below':
@@ -49,7 +47,7 @@ def _add_newline(i: int, lines: [str], pos: str = 'above') -> [str]:
     return lines
 
 
-def _indentation(index: int, lines: List[str]) -> int:
+def _indentation(index: int, lines: [str]) -> int:
     """
     get indent spaces from @line in @lines
     :param lines:
@@ -135,7 +133,7 @@ def field_with_name(clazz: ClassDeclaration, name: str) -> FieldDeclaration:
         print(f'class {clazz.name} has no field {name}')
 
 
-# def get_constructor(clazz: ClassDeclaration, args: List[str]) -> ConstructorDeclaration:
+# def get_constructor(clazz: ClassDeclaration, args: [str]) -> ConstructorDeclaration:
     # fixme compare constructor args with set
     # return list(filter(lambda c: c, clazz.constructors))
 
@@ -148,10 +146,6 @@ def field_with_name(clazz: ClassDeclaration, name: str) -> FieldDeclaration:
 # # # # # # # # # # # #
 # method utils
 #
-# def methods_with_anno(clazz: ClassDeclaration, anno: str) -> [MethodDeclaration]:
-#     return [m for m in clazz.methods for a in m.annotations if a.name == anno]
-
-
 # def method_height(method: MethodDeclaration) -> int:
 #     return method.position.line + 0 + len(method.annotations) # todo implement
 
@@ -161,12 +155,14 @@ def method_has_annotation(method: MethodDeclaration, anno: str) -> bool:
     return any(annos)
 
 
-def method_annotation(method: MethodDeclaration, anno: str) -> Annotation:
+def get_method_annotation(method: MethodDeclaration, anno: str) -> Annotation:
     annos = list(filter(lambda a: a.name == anno, method.annotations))
-    return annos[0]
+    if annos:
+        return annos[0]
+    raise Exception(f'Method {method.name} has no annotation {anno}')
 
 
-def method_lines(acc_mod: str, rettype: str, name: str, args: List[str], body: List[str], anno: str = None) -> List[
+def method_lines(acc_mod: str, rettype: str, name: str, args: [str], body: [str], anno: str = None) -> [
     str]:
     return [f'{"@" + anno if anno else ""}\n',
             f'{acc_mod} {rettype + " " if rettype else ""}{name}({", ".join(args)}) {{\n'] + \
@@ -186,7 +182,7 @@ def is_getbyuid_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_get = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'GET'])
     one_param = len(m.parameters) == 1
     has_params = method_has_param_types(m, 'UUID', 1)
@@ -198,10 +194,10 @@ def is_updatebyuid_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_put = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'PUT'])
     has_params = method_has_param_types(m, 'UUID', 1) and method_has_param_types(m, 'BindingResult', 1)
-    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    has_request_body = any(list([p for p in m.parameters if get_parameter_annotation(p, 'RequestBody')]))
     return req_map and is_put and has_anno and has_params and has_request_body
 
 
@@ -210,7 +206,7 @@ def is_deletebyuid_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_deelte = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'DELETE'])
     one_param = len(m.parameters) == 1
     has_params = method_has_param_types(m, 'UUID', 1)
@@ -222,11 +218,11 @@ def is_create_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_post = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'POST'])
     param_number = len(m.parameters) > 1
     has_params = method_has_param_types(m, 'BindingResult', 1) and not method_has_param_types(m, 'UUID', 1)
-    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    has_request_body = any(list([p for p in m.parameters if get_parameter_annotation(p, 'RequestBody')]))
     return req_map and is_post and has_anno and has_params and has_request_body and param_number
 
 
@@ -238,7 +234,7 @@ def is_associate_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_put = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'PUT'])
     two_params = len(m.parameters) > 1
     has_params = method_has_param_types(m, 'UUID', 2) or method_has_param_types(m, 'UUID', 3)
@@ -250,7 +246,7 @@ def is_disassociate_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_delete = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'DELETE'])
     two_params = len(m.parameters) > 1
     has_params = method_has_param_types(m, 'UUID', 2) or method_has_param_types(m, 'UUID', 3)
@@ -262,11 +258,11 @@ def is_create_and_associate_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_post = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'POST'])
     params_number = len(m.parameters) > 1
     has_params = method_has_param_types(m, 'UUID', 1)
-    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    has_request_body = any(list([p for p in m.parameters if get_parameter_annotation(p, 'RequestBody')]))
     return is_post and params_number and has_anno and has_params and has_request_body
 
 
@@ -275,7 +271,7 @@ def is_get_associations_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_post = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'GET'])
     params_number = len(m.parameters) > 1
     has_params = method_has_param_types(m, 'UUID', 1) or method_has_param_types(m, 'UUID', 2) or method_has_param_types(m, 'UUID', 3)
@@ -289,7 +285,7 @@ def is_get_type_by_key_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_get = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'GET'])
     has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
     params_number = len(m.parameters) == 1
@@ -301,7 +297,7 @@ def is_delete_type_by_key_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_delte = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'DELETE'])
     has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
     params_number = len(m.parameters) == 1
@@ -313,12 +309,12 @@ def is_update_type_by_key_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_update = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'PUT'])
     has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
     params_number = len(m.parameters) >= 1
     has_params = method_has_param_types(m, 'String', 1) and method_has_param_types(m, 'BindingResult', 1)
-    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    has_request_body = any(list([p for p in m.parameters if get_parameter_annotation(p, 'RequestBody')]))
     return is_update and params_number and has_anno and has_params and has_key_in_mapping and has_request_body
 
 
@@ -326,11 +322,11 @@ def is_create_type_by_key_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     is_post = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'POST'])
     params_number = len(m.parameters) == 2
     has_params = method_has_param_types(m, 'BindingResult', 1)
-    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    has_request_body = any(list([p for p in m.parameters if get_parameter_annotation(p, 'RequestBody')]))
     return is_post and params_number and has_anno and has_params and has_request_body
 
 
@@ -342,7 +338,7 @@ def is_associate_type_with_entity_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
     is_method = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'PUT'])
     params_number = len(m.parameters) == 2
@@ -354,7 +350,7 @@ def is_disassociate_type_with_entity_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
     is_method = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'DELETE'])
     params_number = len(m.parameters) == 2
@@ -366,27 +362,46 @@ def is_get_type_associations_web_endpoint(m: MethodDeclaration) -> bool:
     has_anno = method_has_annotation(m, 'RequestMapping')
     if not has_anno:
         return False
-    req_map = method_annotation(m, 'RequestMapping')
+    req_map = get_method_annotation(m, 'RequestMapping')
     has_key_in_mapping = any([e for e in req_map.element if e.name == 'value' and 'key'.upper() in e.value.value.upper()])
     is_method = any([e for e in req_map.element if e.name == 'method' and e.value.member == 'GET'])
     params_number = len(m.parameters) > 2
     has_params = method_has_param_types(m, 'String', 1) and method_has_param_types(m, 'Pageable', 1)
-    has_request_body = any(list([p for p in m.parameters if parameter_annotation(p, 'RequestBody')]))
+    has_request_body = any(list([p for p in m.parameters if get_parameter_annotation(p, 'RequestBody')]))
     return is_method and params_number and has_anno and has_params and has_request_body and has_key_in_mapping
 
 
 # # # # # # # # # # # #
 # annotation utils
 #
-def annotation_with_props_lines(name: str, props: dict) -> [str]:
-    annoprops_lines = [f'    {k}={v},\n' for k, v in props.items()]
-    annoprops_lines[-1] = annoprops_lines[-1].replace(',\n', '\n')
-    return [f'@{name}(\n'] + \
+def annotation_with_props_lines(name: str, props: dict, oneline: bool = False) -> [str]:
+    annoprops_lines = [f'    {k} = {v}, \n' for k, v in props.items()]
+    annoprops_lines[-1] = annoprops_lines[-1].replace(', \n', ' \n')
+    block_lines = [f'@{name}(\n'] + \
            annoprops_lines + \
            [')\n']
+    if oneline:
+        the_line = []
+        for i, l in enumerate(block_lines):
+            if i < len(block_lines) - 1:    # last line of block
+                the_line.append(l.lstrip().rstrip(' \n'))
+            else:
+                the_line.append(l.lstrip())
+        return [''.join(the_line)]
+    return block_lines
 
 
-def parameter_annotation(p: FormalParameter, anno: str) -> Annotation:
+def get_annotation_property(anno: Annotation, prop_name: str = 'value', member_or_string: str = 'string') -> str:
+    """ annotation properties are either a string or a 'member' (class reference or constant or something)
+        'value' is always the default required property on any Java annotation """
+    prop_val = [e.value.value if member_or_string == 'string' else e.member.value
+                for e in anno.element if e.name == prop_name]
+    if prop_val:
+        return prop_val[0]
+    raise Exception(f'Annotation {anno.name} has no {member_or_string} property {prop_name}')
+
+
+def get_parameter_annotation(p: FormalParameter, anno: str) -> Annotation:
     annos = [a for a in p.annotations if a.name == anno]
     return annos[0] if annos else None
 
